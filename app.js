@@ -20,7 +20,27 @@ const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.r
 const keys=o=>Object.keys(o||{}),say=s=>$('notice').textContent=s;
 const isBot=id=>id.startsWith('bot_');let botTimer=null;
 function botStep(s){if(s.status!=='playing')return;const ids=keys(s.players),alive=ids.filter(id=>s.players[id].alive);if(s.pending&&isBot(s.pending.target)){let p=s.players[s.pending.target],i=p.hand.indexOf('빗나감!');if(i>=0){p.hand.splice(i,1);s.discard.push('빗나감!');s.log.push(p.name+' 회피 성공');}else{p.hp--;s.log.push(p.name+' 피해 1');if(p.hp<=0){p.alive=false;p.hand=[];s.log.push(p.name+' 탈락 ('+p.role+')');let attacker=s.players[s.pending.attacker];if(p.role==='무법자'&&attacker?.alive)draw(s,s.pending.attacker,3);if(p.role==='부관'&&attacker?.role==='보안관')attacker.hand=[];}}s.pending=null;winner(s);return s;}if(!isBot(s.turn)||s.pending)return;let id=s.turn,p=s.players[id];if(s.phase==='draw'){draw(s,id,2);s.phase='play';s.log.push(p.name+' 카드 2장 뽑음');return s;}if(s.phase==='play'){if(p.hp<p.maxHp&&alive.length>2&&p.hand.includes('맥주')){p.hand.splice(p.hand.indexOf('맥주'),1);p.hp++;s.discard.push('맥주');s.log.push(p.name+' 맥주 사용');return s;}let targets=alive.filter(x=>x!==id&&distance(s,id,x)<=1);if(!s.bangUsed&&p.hand.includes('BANG!')&&targets.length){let target=targets[Math.floor(Math.random()*targets.length)];p.hand.splice(p.hand.indexOf('BANG!'),1);s.discard.push('BANG!');s.bangUsed=true;s.pending={attacker:id,target};s.log.push(p.name+' → '+s.players[target].name+' BANG!');return s;}while(p.hand.length>p.hp){let i=p.hand.indexOf('BANG!');if(i<0)i=p.hand.length-1;s.discard.push(p.hand.splice(i,1)[0]);}advance(s);return s;}}
-function scheduleBot(){clearTimeout(botTimer);if(!state||state.host!==uid||state.status!=='playing')return;if(!(state.pending&&isBot(state.pending.target))&&!isBot(state.turn))return;botTimer=setTimeout(()=>mutate(s=>botStep(s)),950);}
+function scheduleBot() {
+  clearTimeout(botTimer);
+
+  if (!state || state.host !== uid || state.status !== 'playing') {
+    return;
+  }
+
+  const botNeedsAction =
+    (state.pending && isBot(state.pending.target)) ||
+    (!state.pending && isBot(state.turn));
+
+  if (!botNeedsAction) return;
+
+  botTimer = setTimeout(async () => {
+    try {
+      await mutate(s => botStep(s));
+    } catch (error) {
+      console.error("봇 실행 오류:", error);
+    }
+  }, 1200);
+}
 $('addBot').onclick=()=>mutate(s=>{if(s.host!==uid||s.status!=='waiting'||keys(s.players).length>=7)return;let i=1;while(s.players['bot_'+i])i++;s.players['bot_'+i]={name:'컴퓨터 '+i};s.log.push('컴퓨터 '+i+' 입장');return s});
 $('removeBot').onclick=()=>mutate(s=>{if(s.host!==uid||s.status!=='waiting')return;let bots=keys(s.players).filter(isBot);if(!bots.length)return;let id=bots[bots.length-1];delete s.players[id];s.log.push('컴퓨터 퇴장');return s});
 async function mutate(fn){if(busy||!room)return;busy=true;try{const result=await runTransaction(ref(db,'rooms/'+room),old=>{if(!old)return;return fn(old)||undefined},{applyLocally:false});if(!result.committed)say('현재 이 작업을 할 수 없습니다.');}catch(e){say('오류: '+e.message)}finally{busy=false}}
